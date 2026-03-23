@@ -30,7 +30,6 @@ function saveData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(bosses, null, 2));
 }
 
-// ---------------- DASHBOARD SAVE ----------------
 function saveDashboard(id) {
   fs.writeFileSync(DASHBOARD_FILE, JSON.stringify({ id }));
 }
@@ -107,45 +106,6 @@ function buildDashboard() {
     .setTimestamp();
 }
 
-// ---------------- NOTIFICĂRI ----------------
-setInterval(() => {
-  const now = dayjs();
-
-  bosses.forEach(boss => {
-    let next = dayjs(boss.firstSpawn);
-
-    while (next.isBefore(now)) {
-      next = next.add(boss.respawn, 'minute');
-    }
-
-    const diff = next.diff(now, 'minute');
-
-    if (diff === 10 && !notified[boss.name]) {
-      const channel = client.channels.cache.get(process.env.CHANNEL_ID);
-      if (channel) {
-        channel.send(`⚔️ ${boss.name} spawn în 10 minute! (~${next.format('HH:mm')})`);
-      }
-      notified[boss.name] = true;
-    }
-
-    if (diff <= 0) notified[boss.name] = false;
-  });
-
-}, 60000);
-
-// ---------------- DASHBOARD UPDATE ----------------
-setInterval(async () => {
-  if (!dashboardMessage) return;
-
-  try {
-    await dashboardMessage.edit({
-      embeds: [buildDashboard()]
-    });
-  } catch (e) {
-    console.log("Dashboard error:", e);
-  }
-}, 60000);
-
 // ---------------- COMMANDS ----------------
 client.on('messageCreate', async (message) => {
   if (!message.content.startsWith('!boss')) return;
@@ -172,7 +132,7 @@ client.on('messageCreate', async (message) => {
     const now = dayjs();
     const [h, m] = time.split(':').map(Number);
 
-    let spawn = now.hour(h).minute(m).second(0);
+    let spawn = now.hour(h).minute(m).second(0).millisecond(0);
 
     if (spawn.isBefore(now)) spawn = spawn.add(1, 'day');
 
@@ -240,22 +200,60 @@ client.once('ready', async () => {
   const channel = await client.channels.fetch(process.env.CHANNEL_ID);
   const saved = loadDashboard();
 
-  try {
-    if (saved?.id) {
+  // ♻️ încearcă să refolosească mesajul
+  if (saved?.id) {
+    try {
       dashboardMessage = await channel.messages.fetch(saved.id);
+      console.log("Dashboard găsit ✔");
+    } catch {
+      dashboardMessage = null;
     }
-  } catch {
-    dashboardMessage = null;
   }
 
+  // 🆕 dacă nu există → creează unul singur
   if (!dashboardMessage) {
     dashboardMessage = await channel.send({
       embeds: [buildDashboard()]
     });
 
-    await dashboardMessage.pin();
+    await dashboardMessage.pin().catch(() => {});
     saveDashboard(dashboardMessage.id);
   }
+
+  // 🔔 NOTIFICĂRI
+  setInterval(() => {
+    const now = dayjs();
+
+    bosses.forEach(boss => {
+      let next = dayjs(boss.firstSpawn);
+
+      while (next.isBefore(now)) {
+        next = next.add(boss.respawn, 'minute');
+      }
+
+      const diff = next.diff(now, 'minute');
+
+      if (diff === 10 && !notified[boss.name]) {
+        channel.send(`⚔️ ${boss.name} spawn în 10 minute! (~${next.format('HH:mm')})`);
+        notified[boss.name] = true;
+      }
+
+      if (diff <= 0) notified[boss.name] = false;
+    });
+  }, 60000);
+
+  // 📊 DASHBOARD UPDATE
+  setInterval(async () => {
+    if (!dashboardMessage) return;
+
+    try {
+      await dashboardMessage.edit({
+        embeds: [buildDashboard()]
+      });
+    } catch (e) {
+      console.log("Dashboard error:", e);
+    }
+  }, 60000);
 });
 
 client.login(process.env.TOKEN);
