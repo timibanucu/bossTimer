@@ -6,7 +6,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.0.0",
-    "dayjs": "^1.11.0"
+    "discord.js": "^14.13.0",
+    "dayjs": "^1.11.10"
   }
 }
