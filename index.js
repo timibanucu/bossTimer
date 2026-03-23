@@ -12,20 +12,26 @@ const client = new Client({
 const bosses = [];
 const notified = {};
 
-// 🔧 FUNCȚIE PARSE RESPAWN
+// 🔧 FORMAT MINUTE → h + m
+function formatMinutes(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+// 🔧 PARSE RESPAWN
 function parseRespawn(input) {
   input = input.toLowerCase();
 
   let respawn;
 
-  // format 6:30
   if (input.includes(':')) {
     const [h, m] = input.split(':').map(Number);
     respawn = (h * 60) + m;
-  }
-
-  // format 6h30m / 6h / 30m
-  else if (input.includes('h') || input.includes('m')) {
+  } else if (input.includes('h') || input.includes('m')) {
     let hours = 0;
     let minutes = 0;
 
@@ -36,17 +42,14 @@ function parseRespawn(input) {
     if (mMatch) minutes = parseInt(mMatch[1]);
 
     respawn = (hours * 60) + minutes;
-  }
-
-  // doar număr → minute
-  else {
+  } else {
     respawn = parseInt(input);
   }
 
   return respawn;
 }
 
-// 🔔 CHECK la fiecare minut
+// 🔔 CHECK notificări
 setInterval(() => {
   const now = dayjs();
 
@@ -59,7 +62,6 @@ setInterval(() => {
 
     const diff = next.diff(now, 'minute');
 
-    // notificare la 10 minute
     if (diff === 10 && !notified[boss.name]) {
       const channel = client.channels.cache.get(process.env.CHANNEL_ID);
 
@@ -70,7 +72,6 @@ setInterval(() => {
       notified[boss.name] = true;
     }
 
-    // reset după spawn
     if (diff <= 0) {
       notified[boss.name] = false;
     }
@@ -84,9 +85,10 @@ client.on('messageCreate', async (message) => {
   if (!message.content.startsWith('!boss')) return;
 
   const args = message.content.split(' ');
+  const command = args[1];
 
   // ➕ ADD
-  if (args[1] === 'add') {
+  if (command === 'add') {
     const name = args[2];
     const time = args[3];
     const input = args[4];
@@ -112,11 +114,20 @@ client.on('messageCreate', async (message) => {
 
     bosses.push({ name, firstSpawn: spawn, respawn });
 
-    message.reply(`✅ Boss **${name}** adăugat (${respawn} min respawn).`);
+    let next = spawn;
+
+    while (next.isBefore(dayjs())) {
+      next = next.add(respawn, 'minute');
+    }
+
+    message.reply(
+      `✅ Boss **${name}** adăugat (${formatMinutes(respawn)})\n` +
+      `🕒 Următorul spawn: ~${next.format('HH:mm')}`
+    );
   }
 
   // 📋 LIST
-  if (args[1] === 'list') {
+  if (command === 'list') {
     let reply = '';
 
     bosses.forEach(boss => {
@@ -127,10 +138,30 @@ client.on('messageCreate', async (message) => {
         next = next.add(boss.respawn, 'minute');
       }
 
-      reply += `**${boss.name}** → ~${next.format('HH:mm')}\n`;
+      reply += `**${boss.name}** → ~${next.format('HH:mm')} (${formatMinutes(boss.respawn)})\n`;
     });
 
     message.reply(reply || 'Nu există boss-uri.');
+  }
+
+  // ❌ REMOVE
+  if (command === 'remove') {
+    const name = args[2];
+
+    if (!name) {
+      return message.reply("❌ Folosește: !boss remove Nume");
+    }
+
+    const index = bosses.findIndex(b => b.name.toLowerCase() === name.toLowerCase());
+
+    if (index === -1) {
+      return message.reply(`❌ Boss **${name}** nu există.`);
+    }
+
+    bosses.splice(index, 1);
+    delete notified[name];
+
+    message.reply(`🗑️ Boss **${name}** a fost șters.`);
   }
 });
 
