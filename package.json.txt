@@ -1,0 +1,9 @@
+{
+  "name": "boss-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "discord.js": "^14.0.0",
+    "dayjs": "^1.11.0"
+  }
+}
