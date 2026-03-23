@@ -138,7 +138,9 @@ client.on('messageCreate', async (message) => {
         next = next.add(boss.respawn, 'minute');
       }
 
-      reply += `**${boss.name}** → ~${next.format('HH:mm')} (${formatMinutes(boss.respawn)})\n`;
+      const diffMin = next.diff(dayjs(), 'minute');
+
+reply += `**${boss.name}** → ~${next.format('HH:mm')} (în ${formatMinutes(diffMin)})\n`;
     });
 
     message.reply(reply || 'Nu există boss-uri.');
