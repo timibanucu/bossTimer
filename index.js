@@ -253,7 +253,7 @@ client.once('ready', async () => {
     } catch (e) {
       console.log("Dashboard error:", e);
     }
-  }, 60000);
+  }, 3600000);
 });
 
 client.login(process.env.TOKEN);
