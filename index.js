@@ -73,18 +73,25 @@ function parseRespawn(input) {
   return parseInt(input);
 }
 
+// ---------------- CALCUL NEXT SPAWN ----------------
+function getNextSpawn(boss) {
+  const now = dayjs();
+  let next = dayjs(boss.firstSpawn);
+
+  while (next.isBefore(now)) {
+    next = next.add(boss.respawn, 'minute');
+  }
+
+  return next;
+}
+
 // ---------------- DASHBOARD ----------------
 function buildDashboard() {
   const now = dayjs();
   let description = '';
 
   bosses.forEach(boss => {
-    let next = dayjs(boss.firstSpawn);
-
-    while (next.isBefore(now)) {
-      next = next.add(boss.respawn, 'minute');
-    }
-
+    const next = getNextSpawn(boss);
     const diff = next.diff(now, 'minute');
 
     let status = '🟢';
@@ -124,7 +131,6 @@ client.on('messageCreate', async (message) => {
     }
 
     const respawn = parseRespawn(input);
-
     if (!respawn || isNaN(respawn)) {
       return message.reply("❌ Format invalid");
     }
@@ -133,7 +139,6 @@ client.on('messageCreate', async (message) => {
     const [h, m] = time.split(':').map(Number);
 
     let spawn = now.hour(h).minute(m).second(0).millisecond(0);
-
     if (spawn.isBefore(now)) spawn = spawn.add(1, 'day');
 
     bosses.push({
@@ -144,10 +149,7 @@ client.on('messageCreate', async (message) => {
 
     saveData();
 
-    let next = spawn;
-    while (next.isBefore(dayjs())) {
-      next = next.add(respawn, 'minute');
-    }
+    const next = getNextSpawn(bosses[bosses.length - 1]);
 
     message.reply(
       `✅ Boss **${name}** adăugat (${formatMinutes(respawn)})\n` +
@@ -162,12 +164,7 @@ client.on('messageCreate', async (message) => {
     let txt = '';
 
     bosses.forEach(boss => {
-      let next = dayjs(boss.firstSpawn);
-
-      while (next.isBefore(dayjs())) {
-        next = next.add(boss.respawn, 'minute');
-      }
-
+      const next = getNextSpawn(boss);
       const diff = next.diff(dayjs(), 'minute');
 
       txt += `**${boss.name}** → ~${next.format('HH:mm')} (în ${formatMinutes(diff)})\n`;
@@ -181,15 +178,45 @@ client.on('messageCreate', async (message) => {
     const name = args[2];
 
     const index = bosses.findIndex(b => b.name.toLowerCase() === name.toLowerCase());
-
-    if (index === -1) {
-      return message.reply("❌ Nu există.");
-    }
+    if (index === -1) return message.reply("❌ Nu există.");
 
     bosses.splice(index, 1);
     saveData();
 
     message.reply(`🗑️ ${name} șters`);
+  }
+
+  // EDIT
+  if (cmd === 'edit') {
+    const name = args[2];
+    const time = args[3];
+    const input = args[4];
+
+    const index = bosses.findIndex(b => b.name.toLowerCase() === name.toLowerCase());
+    if (index === -1) return message.reply("❌ Nu există.");
+
+    const respawn = parseRespawn(input);
+
+    const now = dayjs();
+    const [h, m] = time.split(':').map(Number);
+
+    let spawn = now.hour(h).minute(m).second(0);
+    if (spawn.isBefore(now)) spawn = spawn.add(1, 'day');
+
+    bosses[index] = {
+      name,
+      firstSpawn: spawn.toISOString(),
+      respawn
+    };
+
+    saveData();
+
+    const next = getNextSpawn(bosses[index]);
+
+    message.reply(
+      `✏️ Boss **${name}** actualizat (${formatMinutes(respawn)})\n` +
+      `🕒 Următorul spawn: ~${next.format('HH:mm')}`
+    );
   }
 });
 
@@ -200,17 +227,14 @@ client.once('ready', async () => {
   const channel = await client.channels.fetch(process.env.CHANNEL_ID);
   const saved = loadDashboard();
 
-  // ♻️ încearcă să refolosească mesajul
   if (saved?.id) {
     try {
       dashboardMessage = await channel.messages.fetch(saved.id);
-      console.log("Dashboard găsit ✔");
     } catch {
       dashboardMessage = null;
     }
   }
 
-  // 🆕 dacă nu există → creează unul singur
   if (!dashboardMessage) {
     dashboardMessage = await channel.send({
       embeds: [buildDashboard()]
@@ -220,29 +244,26 @@ client.once('ready', async () => {
     saveDashboard(dashboardMessage.id);
   }
 
-  // 🔔 NOTIFICĂRI
+  // 🔔 NOTIFICĂRI (FIXED LOGIC)
   setInterval(() => {
     const now = dayjs();
 
     bosses.forEach(boss => {
-      let next = dayjs(boss.firstSpawn);
-
-      while (next.isBefore(now)) {
-        next = next.add(boss.respawn, 'minute');
-      }
-
+      const next = getNextSpawn(boss);
       const diff = next.diff(now, 'minute');
 
-      if (diff === 10 && !notified[boss.name]) {
-        channel.send(`⚔️ ${boss.name} spawn în 10 minute! (~${next.format('HH:mm')})`);
+      if (diff <= 10 && diff > 0 && !notified[boss.name]) {
+        channel.send(`⚔️ ${boss.name} spawn în ${diff} minute! (~${next.format('HH:mm')})`);
         notified[boss.name] = true;
       }
 
-      if (diff <= 0) notified[boss.name] = false;
+      if (diff <= -1) {
+        notified[boss.name] = false;
+      }
     });
-  }, 60000);
+  }, 30000); // 30 sec
 
-  // 📊 DASHBOARD UPDATE
+  // 📊 DASHBOARD (1 ORĂ)
   setInterval(async () => {
     if (!dashboardMessage) return;
 
@@ -250,9 +271,7 @@ client.once('ready', async () => {
       await dashboardMessage.edit({
         embeds: [buildDashboard()]
       });
-    } catch (e) {
-      console.log("Dashboard error:", e);
-    }
+    } catch {}
   }, 3600000);
 });
 
