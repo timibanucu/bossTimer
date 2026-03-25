@@ -263,7 +263,7 @@ client.once('ready', async () => {
     });
   }, 30000); // 30 sec
 
-  // 📊 DASHBOARD (1 ORĂ)
+  // 📊 DASHBOARD (5m)
   setInterval(async () => {
     if (!dashboardMessage) return;
 
@@ -272,7 +272,7 @@ client.once('ready', async () => {
         embeds: [buildDashboard()]
       });
     } catch {}
-  }, 3600000);
+  }, 300000);
 });
 
 client.login(process.env.TOKEN);
