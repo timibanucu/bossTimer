@@ -6,7 +6,18 @@ const fs = require('fs');
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
-dayjs.tz.setDefault('Europe/Bucharest');
+
+const TZ = 'Europe/Bucharest';
+
+// now() — ora curentă în România
+function now() {
+  return dayjs().tz(TZ);
+}
+
+// fromISO() — parsează un ISO string și îl aduce în timezone România
+function fromISO(iso) {
+  return dayjs(iso).tz(TZ);
+}
 
 const client = new Client({
   intents: [
@@ -23,8 +34,6 @@ let bosses = [];
 let dashboardMessage = null;
 let channel = null;
 
-// notified stochează timestamp-ul ISO al spawn-ului pentru care s-a trimis notificarea
-// ex: { "Wubba": "2026-03-25T14:10:00.000Z" }
 const notified = {};
 
 // ---------------- LOAD / SAVE ----------------
@@ -78,21 +87,18 @@ function parseRespawn(input) {
   const mm = input.match(/(\d+)m/);
   if (hm) h = parseInt(hm[1]);
   if (mm) m = parseInt(mm[1]);
-
   if (h > 0 || m > 0) return h * 60 + m;
 
   const plain = parseInt(input);
   return isNaN(plain) ? null : plain;
 }
 
-// ---------------- CALCUL NEXT SPAWN ----------------
-// Returnează obiect { time: dayjs, key: string }
-// key = ISO string unic per spawn — folosit pentru a nu notifica de 2 ori același spawn
+// ---------------- NEXT SPAWN ----------------
 function getNextSpawn(boss) {
-  const now = dayjs.tz();
-  let next = dayjs.tz(boss.firstSpawn);
+  const n = now();
+  let next = fromISO(boss.firstSpawn);
 
-  while (next.isBefore(now) || next.diff(now, 'second') < 0) {
+  while (next.isBefore(n)) {
     next = next.add(boss.respawn, 'minute');
   }
 
@@ -104,7 +110,7 @@ function getNextSpawn(boss) {
 
 // ---------------- DASHBOARD ----------------
 function buildDashboard() {
-  const now = dayjs.tz();
+  const n = now();
   let description = '';
 
   if (bosses.length === 0) {
@@ -112,21 +118,17 @@ function buildDashboard() {
   } else {
     bosses.forEach(boss => {
       const { time: next } = getNextSpawn(boss);
-      const diff = next.diff(now, 'minute');
-      const diffSec = next.diff(now, 'second');
+      const diffSec = next.diff(n, 'second');
+      const diffMin = next.diff(n, 'minute');
 
       let status;
-      if (diffSec <= 0) {
-        status = '🔴 LIVE';
-      } else if (diff < 10) {
-        status = '🟠 Soon';
-      } else {
-        status = '🟢';
-      }
+      if (diffSec <= 0) status = '🔴 LIVE';
+      else if (diffMin < 10) status = '🟠 Soon';
+      else status = '🟢';
 
       description += `${status} **${boss.name}**\n`;
       description += `⏰ ~${next.format('HH:mm')}\n`;
-      description += `⏳ în ${diff > 0 ? formatMinutes(diff) : 'ACUM'}\n\n`;
+      description += `⏳ în ${diffMin > 0 ? formatMinutes(diffMin) : 'ACUM'}\n\n`;
     });
   }
 
@@ -170,26 +172,21 @@ client.on('messageCreate', async (message) => {
       return message.reply('❌ Format respawn invalid. Ex: `6:30`, `6h30m`, `390`');
     }
 
-    const now = dayjs.tz();
     const [h, m] = time.split(':').map(Number);
     if (isNaN(h) || isNaN(m)) {
       return message.reply('❌ Format oră invalid. Ex: `14:00`');
     }
 
-    let spawn = now.hour(h).minute(m).second(0).millisecond(0);
-    if (spawn.isBefore(now)) spawn = spawn.add(1, 'day');
+    const n = now();
+    let spawn = n.hour(h).minute(m).second(0).millisecond(0);
+    if (spawn.isBefore(n)) spawn = spawn.add(1, 'day');
 
-    bosses.push({
-      name,
-      firstSpawn: spawn.toISOString(),
-      respawn
-    });
-
+    bosses.push({ name, firstSpawn: spawn.toISOString(), respawn });
     saveData();
     await updateDashboard();
 
     const { time: next } = getNextSpawn(bosses[bosses.length - 1]);
-    const diff = next.diff(dayjs.tz(), 'minute');
+    const diff = next.diff(now(), 'minute');
 
     return message.reply(
       `✅ Boss **${name}** adăugat!\n` +
@@ -202,12 +199,12 @@ client.on('messageCreate', async (message) => {
   if (cmd === 'list') {
     if (bosses.length === 0) return message.reply('Nu există boss-uri adăugate.');
 
-    const now = dayjs.tz();
+    const n = now();
     let txt = '**Boss-uri active:**\n';
 
     bosses.forEach((boss, i) => {
       const { time: next } = getNextSpawn(boss);
-      const diff = next.diff(now, 'minute');
+      const diff = next.diff(n, 'minute');
       txt += `**${i + 1}. ${boss.name}** → ~${next.format('HH:mm')} (în ${formatMinutes(diff)}) | Respawn: ${formatMinutes(boss.respawn)}\n`;
     });
 
@@ -249,12 +246,12 @@ client.on('messageCreate', async (message) => {
       return message.reply('❌ Format respawn invalid.');
     }
 
-    const now = dayjs.tz();
     const [h, m] = time.split(':').map(Number);
     if (isNaN(h) || isNaN(m)) return message.reply('❌ Format oră invalid.');
 
-    let spawn = now.hour(h).minute(m).second(0).millisecond(0);
-    if (spawn.isBefore(now)) spawn = spawn.add(1, 'day');
+    const n = now();
+    let spawn = n.hour(h).minute(m).second(0).millisecond(0);
+    if (spawn.isBefore(n)) spawn = spawn.add(1, 'day');
 
     bosses[index] = { name: bosses[index].name, firstSpawn: spawn.toISOString(), respawn };
     delete notified[bosses[index].name];
@@ -262,7 +259,7 @@ client.on('messageCreate', async (message) => {
     await updateDashboard();
 
     const { time: next } = getNextSpawn(bosses[index]);
-    const diff = next.diff(now, 'minute');
+    const diff = next.diff(now(), 'minute');
 
     return message.reply(
       `✏️ Boss **${bosses[index].name}** actualizat!\n` +
@@ -287,6 +284,7 @@ client.on('messageCreate', async (message) => {
 // ---------------- READY ----------------
 client.once('ready', async () => {
   console.log(`✅ Bot online ca ${client.user.tag}`);
+  console.log(`🕒 Ora server UTC: ${dayjs().format('HH:mm')} | Ora România: ${now().format('HH:mm')}`);
 
   channel = await client.channels.fetch(process.env.CHANNEL_ID);
   const saved = loadDashboard();
@@ -308,50 +306,34 @@ client.once('ready', async () => {
     console.log('✅ Dashboard nou creat.');
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // 🔔 NOTIFICĂRI — rulează la fiecare 30 secunde
-  //
-  // LOGICA CORECTĂ:
-  //   - Calculăm next spawn pentru fiecare boss
-  //   - Dacă e în fereastra [1min, 10min] ȘI nu am notificat deja
-  //     pentru ACEST spawn specific (identificat prin key = ISO string),
-  //     trimitem notificarea și salvăm key-ul
-  //   - Când next spawn se schimbă (boss a spawnat, trecem la următorul),
-  //     key-ul e diferit → se poate notifica din nou
-  // ─────────────────────────────────────────────────────────────
+  // 🔔 NOTIFICĂRI — la fiecare 30 secunde
   setInterval(async () => {
-    const now = dayjs.tz();
+    const n = now();
 
     for (const boss of bosses) {
       const { time: next, key } = getNextSpawn(boss);
-      const diffSec = next.diff(now, 'second');
+      const diffSec = next.diff(n, 'second');
       const diffMin = Math.ceil(diffSec / 60);
 
-      // Fereastra de notificare: între 1 și 10 minute înainte
       const inWindow = diffSec > 0 && diffMin <= 10;
 
       if (inWindow && notified[boss.name] !== key) {
-        // Trimite notificare
         try {
           await channel.send(
             `⚔️ **${boss.name}** spawn în **${diffMin} minute**! (~${next.format('HH:mm')})`
           );
-          notified[boss.name] = key; // Marchează spawn-ul curent ca notificat
+          notified[boss.name] = key;
           console.log(`🔔 Notificat: ${boss.name} la ${next.format('HH:mm')}`);
         } catch (err) {
           console.error(`Eroare notificare ${boss.name}:`, err.message);
         }
       }
-
-      // Dacă spawn-ul pentru care am notificat a trecut deja, resetăm
-      // (key-ul va fi diferit la următorul getNextSpawn, deci se auto-resetează)
     }
   }, 30_000);
 
-  // 📊 DASHBOARD — update la fiecare 60 secunde
+  // 📊 DASHBOARD — la fiecare 60 secunde
   setInterval(updateDashboard, 60_000);
 
-  // Update imediat la start
   await updateDashboard();
 });
 
