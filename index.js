@@ -1,6 +1,12 @@
 const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
 const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
 const fs = require('fs');
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault('Europe/Bucharest');
 
 const client = new Client({
   intents: [
@@ -83,10 +89,9 @@ function parseRespawn(input) {
 // Returnează obiect { time: dayjs, key: string }
 // key = ISO string unic per spawn — folosit pentru a nu notifica de 2 ori același spawn
 function getNextSpawn(boss) {
-  const now = dayjs();
-  let next = dayjs(boss.firstSpawn);
+  const now = dayjs.tz();
+  let next = dayjs.tz(boss.firstSpawn);
 
-  // Avansează până găsim primul spawn în viitor
   while (next.isBefore(now) || next.diff(now, 'second') < 0) {
     next = next.add(boss.respawn, 'minute');
   }
@@ -97,24 +102,9 @@ function getNextSpawn(boss) {
   };
 }
 
-// Returnează spawn-ul imediat anterior (cel mai recent din trecut)
-function getPrevSpawn(boss) {
-  const now = dayjs();
-  let prev = dayjs(boss.firstSpawn);
-  let prevPrev = null;
-
-  while (prev.isBefore(now)) {
-    prevPrev = prev;
-    prev = prev.add(boss.respawn, 'minute');
-  }
-
-  // prev e primul din viitor, prevPrev e ultimul din trecut
-  return prevPrev;
-}
-
 // ---------------- DASHBOARD ----------------
 function buildDashboard() {
-  const now = dayjs();
+  const now = dayjs.tz();
   let description = '';
 
   if (bosses.length === 0) {
@@ -180,14 +170,13 @@ client.on('messageCreate', async (message) => {
       return message.reply('❌ Format respawn invalid. Ex: `6:30`, `6h30m`, `390`');
     }
 
-    const now = dayjs();
+    const now = dayjs.tz();
     const [h, m] = time.split(':').map(Number);
     if (isNaN(h) || isNaN(m)) {
       return message.reply('❌ Format oră invalid. Ex: `14:00`');
     }
 
     let spawn = now.hour(h).minute(m).second(0).millisecond(0);
-    // Dacă ora introdusă e în trecut, înseamnă că utilizatorul se referă la mâine
     if (spawn.isBefore(now)) spawn = spawn.add(1, 'day');
 
     bosses.push({
@@ -200,7 +189,7 @@ client.on('messageCreate', async (message) => {
     await updateDashboard();
 
     const { time: next } = getNextSpawn(bosses[bosses.length - 1]);
-    const diff = next.diff(dayjs(), 'minute');
+    const diff = next.diff(dayjs.tz(), 'minute');
 
     return message.reply(
       `✅ Boss **${name}** adăugat!\n` +
@@ -213,7 +202,7 @@ client.on('messageCreate', async (message) => {
   if (cmd === 'list') {
     if (bosses.length === 0) return message.reply('Nu există boss-uri adăugate.');
 
-    const now = dayjs();
+    const now = dayjs.tz();
     let txt = '**Boss-uri active:**\n';
 
     bosses.forEach((boss, i) => {
@@ -260,7 +249,7 @@ client.on('messageCreate', async (message) => {
       return message.reply('❌ Format respawn invalid.');
     }
 
-    const now = dayjs();
+    const now = dayjs.tz();
     const [h, m] = time.split(':').map(Number);
     if (isNaN(h) || isNaN(m)) return message.reply('❌ Format oră invalid.');
 
@@ -331,7 +320,7 @@ client.once('ready', async () => {
   //     key-ul e diferit → se poate notifica din nou
   // ─────────────────────────────────────────────────────────────
   setInterval(async () => {
-    const now = dayjs();
+    const now = dayjs.tz();
 
     for (const boss of bosses) {
       const { time: next, key } = getNextSpawn(boss);
