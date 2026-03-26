@@ -187,11 +187,9 @@ client.on('messageCreate', async (message) => {
     }
 
     let spawn = now.hour(h).minute(m).second(0).millisecond(0);
-    // Dacă ora e în trecut azi, o punem azi oricum — getNextSpawn va avansa singur
-    // NU adăugăm zi, lăsăm firstSpawn să fie chiar spawn-ul real trecut/viitor
-    // Dacă utilizatorul introduce ora din trecut, înseamnă că boss-ul a spawnat deja azi
+    // Dacă ora introdusă e în trecut, înseamnă că utilizatorul se referă la mâine
+    if (spawn.isBefore(now)) spawn = spawn.add(1, 'day');
 
-    // Dacă spawn-ul e cu mai mult de un ciclu în trecut, nu contează — getNextSpawn se ocupă
     bosses.push({
       name,
       firstSpawn: spawn.toISOString(),
@@ -267,6 +265,7 @@ client.on('messageCreate', async (message) => {
     if (isNaN(h) || isNaN(m)) return message.reply('❌ Format oră invalid.');
 
     let spawn = now.hour(h).minute(m).second(0).millisecond(0);
+    if (spawn.isBefore(now)) spawn = spawn.add(1, 'day');
 
     bosses[index] = { name: bosses[index].name, firstSpawn: spawn.toISOString(), respawn };
     delete notified[bosses[index].name];
